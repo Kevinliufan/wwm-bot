@@ -18,10 +18,16 @@ const client = new Client({
   ],
 });
 
-// Initialize Gemini
+// Initialize Gemini with Google Search grounding
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-// Sticking to 1.5 Flash because it has a huge context window (can read whole pages)
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
+const model = genAI.getGenerativeModel({
+  model: "gemini-2.0-flash",
+  tools: [
+    {
+      googleSearch: {},
+    },
+  ],
+});
 
 const memoryCache = new Map();
 let dailyAiCount = 0;
@@ -47,68 +53,41 @@ client.on("messageCreate", async (message) => {
     }
 
     const processingMsg = await message.reply(
-      `⚔️ *Traveling to the archives to read about "${userQuery}"...*`
+      `⚔️ *Searching the world for "${userQuery}"...*`
     );
 
     try {
-      // 3. SEARCH GOOGLE (To get the best link) - Supports English & Chinese
-      const apiKey = process.env.GOOGLE_API_KEY;
-      const cx = process.env.SEARCH_ENGINE_ID;
-      const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(
-        userQuery
-      )}&lr=lang_en|lang_zh-CN|lang_zh-TW`;
-
-      const searchResponse = await axios.get(searchUrl);
-      const data = searchResponse.data;
-
-      if (!data.items || data.items.length === 0) {
-        await processingMsg.edit("🚫 **No results found.**");
-        return;
-      }
-
-      const bestResult = data.items[0]; // Take the #1 result
-      const bestLink = bestResult.link;
-
-      // 4. DEEP READ (Fetch the full page content)
-      // We use r.jina.ai to convert the website URL into clean text for the AI
-      console.log(`Reading page: ${bestLink}`);
-      const jinaUrl = `https://r.jina.ai/${bestLink}`;
-
-      let fullPageText = "";
-      try {
-        const pageResponse = await axios.get(jinaUrl, {
-          headers: {
-            "Accept-Charset": "utf-8",
-          },
-        });
-        fullPageText = pageResponse.data;
-      } catch (readError) {
-        console.error("Could not read page, falling back to snippet.");
-        fullPageText = bestResult.snippet;
-      }
-
+      // Let Gemini search the web with Google Search grounding
       const prompt = `
-        You are an expert guide for "Where Winds Meet" (天涯明月刀).
-        
-        I have provided the full text of a wiki page below. 
-        Your job is to answer the User Question using ONLY that text.
+        You are an expert guide for "Where Winds Meet" (天涯明月刀) game.
         
         User Question: ${userQuery}
         
-        --- WIKI PAGE CONTENT ---
-         ${fullPageText}
-        -------------------------
-        
         Instructions:
+        - Search the web for accurate information about this topic.
         - Provide a detailed summary (3-4 sentences).
-        - Answer in the same language as the User Question (English or Chinese).
-        - Include specific stats, locations, or skills mentioned in the text.
+        - If the question is in Chinese, answer in Chinese. If in English, answer in English.
+        - Include specific stats, locations, or skills if available.
         - Use **Bold** for key terms.
-        - Ends with: [Read Source](${bestLink})
+        - If you found sources, mention them at the end.
       `;
 
       const result = await model.generateContent(prompt);
-      const aiText = result.response.text();
+      const response = result.response;
+
+      // Get the text response
+      let aiText = response.text();
+
+      // Extract grounding metadata (search sources) if available
+      const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
+      if (groundingMetadata?.searchEntryPoint?.renderedContent) {
+        aiText += "\n\n" + groundingMetadata.searchEntryPoint.renderedContent;
+      } else if (groundingMetadata?.groundingChunks?.length > 0) {
+        const firstSource = groundingMetadata.groundingChunks[0];
+        if (firstSource.web?.uri) {
+          aiText += `\n\n[Source](${firstSource.web.uri})`;
+        }
+      }
 
       // 6. CACHE & REPLY
       dailyAiCount++;
