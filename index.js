@@ -59,7 +59,7 @@ client.on("messageCreate", async (message) => {
     try {
       // Let Gemini search the web with Google Search grounding
       const prompt = `
-        You are an expert guide for "Where Winds Meet" (天涯明月刀) game.
+        You are an expert guide for "Where Winds Meet" (燕云十六声) game.
         
         User Question: ${userQuery}
         
