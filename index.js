@@ -80,12 +80,8 @@ client.on("messageCreate", async (message) => {
         fullPageText = pageResponse.data;
       } catch (readError) {
         console.error("Could not read page, falling back to snippet.");
-        fullPageText = bestResult.snippet; // Fallback if reading fails
+        fullPageText = bestResult.snippet;
       }
-
-      // 5. ASK GEMINI (With the FULL context)
-      // We truncate the text to 8000 characters to keep it fast and safe
-      const safeText = fullPageText.substring(0, 8000);
 
       const prompt = `
         You are an expert guide for "Where Winds Meet".
@@ -96,7 +92,7 @@ client.on("messageCreate", async (message) => {
         User Question: ${userQuery}
         
         --- WIKI PAGE CONTENT ---
-        ${safeText}
+         ${fullPageText}
         -------------------------
         
         Instructions:
