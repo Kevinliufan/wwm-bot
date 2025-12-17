@@ -1,13 +1,13 @@
-const { Client, GatewayIntentBits } = require('discord.js');
-const { search } = require('duck-duck-scrape');
-const express = require('express');
+const { Client, GatewayIntentBits } = require("discord.js");
+const axios = require("axios"); // New library for Google
+const express = require("express");
 
 // --- KEEP ALIVE SERVER ---
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.get('/', (req, res) => {
-  res.send('Where Winds Meet Bot is Alive!');
+app.get("/", (req, res) => {
+  res.send("WWM Google-Bot is Alive!");
 });
 
 app.listen(port, () => {
@@ -19,45 +19,62 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+    GatewayIntentBits.MessageContent,
+  ],
 });
 
-client.once('ready', () => {
+client.once("ready", () => {
   console.log(`Logged in as ${client.user.tag}!`);
 });
 
-client.on('messageCreate', async (message) => {
-  // Ignore messages from bots
+client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // Check if message starts with !ask
-  if (message.content.startsWith('!ask ')) {
+  if (message.content.startsWith("!ask ")) {
     const query = message.content.slice(5).trim();
-    
-    // Send initial "searching" message
-    const processingMsg = await message.reply(`🔍 Searching the Wiki for: **${query}**...`);
+    const processingMsg = await message.reply(
+      `🔍 Searching the Wiki for: **${query}**...`
+    );
 
     try {
-      // Search specific Fextralife site
-      const searchResults = await search(`site:wherewindsmeet.wiki.fextralife.com ${query}`, {
-        safeSearch: 0
-      });
+      // GOOGLE CUSTOM SEARCH API REQUEST
+      // We use the keys from Environment Variables
+      const apiKey = process.env.GOOGLE_API_KEY;
+      const cx = process.env.SEARCH_ENGINE_ID;
 
-      if (searchResults.results && searchResults.results.length > 0) {
-        const firstResult = searchResults.results[0];
-        // Edit the message with the result
-        await processingMsg.edit(`**I found this on the Wiki:**\n${firstResult.description}\n\n*Read more: <${firstResult.url}>*`);
+      const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(
+        query
+      )}`;
+
+      const response = await axios.get(url);
+      const data = response.data;
+
+      if (data.items && data.items.length > 0) {
+        const firstResult = data.items[0];
+
+        // Prepare the answer
+        const snippet = firstResult.snippet.replace(/\n/g, " "); // Clean up newlines
+        const title = firstResult.title;
+        const link = firstResult.link;
+
+        await processingMsg.edit(
+          `**${title}**\n${snippet}\n\n*Read more: <${link}>*`
+        );
       } else {
-        await processingMsg.edit("Sorry, I couldn't find anything on the Fextralife Wiki for that.");
+        await processingMsg.edit(
+          "Sorry, I couldn't find anything on the Wiki for that."
+        );
       }
-
     } catch (error) {
-      console.error('Search error:', error);
-      await processingMsg.edit("An error occurred while searching.");
+      console.error(
+        "Google Search Error:",
+        error.response ? error.response.data : error.message
+      );
+      await processingMsg.edit(
+        "❌ I ran into an error searching. (Check API Keys)"
+      );
     }
   }
 });
 
-// Login using the secret token (we set this in Render later)
 client.login(process.env.DISCORD_TOKEN);
