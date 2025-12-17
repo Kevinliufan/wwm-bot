@@ -12,3 +12,5 @@ services:
         sync: false
       - key: SEARCH_ENGINE_ID
         sync: false
+      - key: GEMINI_API_KEY
+        sync: false
