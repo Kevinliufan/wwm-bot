@@ -3,10 +3,10 @@ const axios = require("axios");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const express = require("express");
 
-// --- KEEP ALIVE SERVER ---
+// --- KEEP ALIVE ---
 const app = express();
 const port = process.env.PORT || 3000;
-app.get("/", (req, res) => res.send("WWM AI-Bot is Alive!"));
+app.get("/", (req, res) => res.send("WWM Deep-Bot is Alive!"));
 app.listen(port, () => console.log(`Web server listening on port ${port}`));
 
 // --- CONFIGURATION ---
@@ -20,10 +20,14 @@ const client = new Client({
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
+// Sticking to 1.5 Flash because it has a huge context window (can read whole pages)
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-// Cache memory
 const memoryCache = new Map();
+let dailyAiCount = 0;
+setInterval(() => {
+  dailyAiCount = 0;
+}, 86400000);
 
 client.once("ready", () => {
   console.log(`Logged in as ${client.user.tag}!`);
@@ -42,12 +46,19 @@ client.on("messageCreate", async (message) => {
       return;
     }
 
+    // 2. CHECK LIMITS
+    if (dailyAiCount >= 50) {
+      // Safety brake for free tier
+      await message.reply("🛑 Daily limit reached.");
+      return;
+    }
+
     const processingMsg = await message.reply(
-      `⚔️ *Consulting the archives about "${userQuery}"...*`
+      `⚔️ *Traveling to the archives to read about "${userQuery}"...*`
     );
 
     try {
-      // 2. SEARCH GOOGLE
+      // 3. SEARCH GOOGLE (To get the best link)
       const apiKey = process.env.GOOGLE_API_KEY;
       const cx = process.env.SEARCH_ENGINE_ID;
       const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(
@@ -58,55 +69,64 @@ client.on("messageCreate", async (message) => {
       const data = searchResponse.data;
 
       if (!data.items || data.items.length === 0) {
-        await processingMsg.edit(
-          "🚫 **No results found.** The scrolls contain no knowledge of this."
-        );
+        await processingMsg.edit("🚫 **No results found.**");
         return;
       }
 
-      // 3. PREPARE DATA
-      const topResults = data.items
-        .slice(0, 3)
-        .map(
-          (item) =>
-            `Title: ${item.title}\nSnippet: ${item.snippet}\nLink: ${item.link}`
-        )
-        .join("\n\n");
+      const bestResult = data.items[0]; // Take the #1 result
+      const bestLink = bestResult.link;
 
-      // 4. ASK GEMINI (With Markdown Instructions)
+      // 4. DEEP READ (Fetch the full page content)
+      // We use r.jina.ai to convert the website URL into clean text for the AI
+      console.log(`Reading page: ${bestLink}`);
+      const jinaUrl = `https://r.jina.ai/${bestLink}`;
+
+      let fullPageText = "";
+      try {
+        const pageResponse = await axios.get(jinaUrl);
+        fullPageText = pageResponse.data;
+      } catch (readError) {
+        console.error("Could not read page, falling back to snippet.");
+        fullPageText = bestResult.snippet; // Fallback if reading fails
+      }
+
+      // 5. ASK GEMINI (With the FULL context)
+      // We truncate the text to 8000 characters to keep it fast and safe
+      const safeText = fullPageText.substring(0, 8000);
+
       const prompt = `
-        You are a guide for "Where Winds Meet".
-        Question: ${userQuery}
-        Search Results: ${topResults}
+        You are an expert guide for "Where Winds Meet".
+        
+        I have provided the full text of a wiki page below. 
+        Your job is to answer the User Question using ONLY that text.
+        
+        User Question: ${userQuery}
+        
+        --- WIKI PAGE CONTENT ---
+        ${safeText}
+        -------------------------
         
         Instructions:
-        - Summarize the answer in 2-3 sentences.
-        - USE DISCORD MARKDOWN:
-          - Use **Bold** for item names or key terms.
-          - Use *Italics* for lore or flavor text.
-        - Ignore the Fextralife "Nov 13, 2025" dates.
-        - End with a citation link formatted like this: [Read Source](URL)
+        - Provide a detailed summary (3-4 sentences).
+        - Include specific stats, locations, or skills mentioned in the text.
+        - Use **Bold** for key terms.
+        - Ends with: [Read Source](${bestLink})
       `;
 
       const result = await model.generateContent(prompt);
       const aiText = result.response.text();
 
-      // 5. CACHE AND REPLY
+      // 6. CACHE & REPLY
+      dailyAiCount++;
       memoryCache.set(cacheKey, aiText);
       setTimeout(() => memoryCache.delete(cacheKey), 1000 * 60 * 60 * 24);
 
       await processingMsg.edit(aiText);
     } catch (error) {
       console.error("Error:", error);
-      if (error.response && error.response.status === 403) {
-        await processingMsg.edit(
-          "🛑 **Configuration Error.** Please check Render logs for API Key issues."
-        );
-      } else {
-        await processingMsg.edit(
-          "⚠️ **Error.** The spirits are silent right now."
-        );
-      }
+      await processingMsg.edit(
+        "⚠️ **Error.** The archives are unreadable right now."
+      );
     }
   }
 });
