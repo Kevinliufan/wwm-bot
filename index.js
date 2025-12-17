@@ -57,8 +57,22 @@ client.on("messageCreate", async (message) => {
     );
 
     try {
-      // STEP 1: Use Gemini's Google Search to find the best URL
-      const searchPrompt = `Find the best wiki or guide page about "${userQuery}" for the game "Where Winds Meet" (燕云十六声). Return ONLY the URL, nothing else.`;
+      // Detect language: check if query contains Chinese characters
+      const hasChinese = /[\u4e00-\u9fa5]/.test(userQuery);
+      const targetSite = hasChinese
+        ? "https://cg.163.com/"
+        : "https://wherewindsmeet.wiki.fextralife.com/";
+
+      console.log(
+        `Language detected: ${
+          hasChinese ? "Chinese" : "English"
+        }, searching in: ${targetSite}`
+      );
+
+      // STEP 1: Use Gemini's Google Search to find the best URL (site-restricted)
+      const searchPrompt = `Find the best wiki or guide page about "${userQuery}" for the game "Where Winds Meet" (燕云十六声). 
+      ONLY search within the site: ${targetSite}
+      Return ONLY the URL, nothing else.`;
 
       const searchResult = await model.generateContent(searchPrompt);
       const searchResponse = searchResult.response;
