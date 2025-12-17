@@ -78,15 +78,26 @@ client.on("messageCreate", async (message) => {
       // Get the text response
       let aiText = response.text();
 
-      // Extract grounding metadata (search sources) if available
+      // Extract clean source links (avoid HTML/CSS noise from grounding metadata)
       const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
-      if (groundingMetadata?.searchEntryPoint?.renderedContent) {
-        aiText += "\n\n" + groundingMetadata.searchEntryPoint.renderedContent;
-      } else if (groundingMetadata?.groundingChunks?.length > 0) {
-        const firstSource = groundingMetadata.groundingChunks[0];
-        if (firstSource.web?.uri) {
-          aiText += `\n\n[Source](${firstSource.web.uri})`;
+      if (groundingMetadata?.groundingChunks?.length > 0) {
+        const sources = groundingMetadata.groundingChunks
+          .filter((chunk) => chunk.web?.uri)
+          .slice(0, 2) // Max 2 sources
+          .map((chunk) => chunk.web.uri);
+
+        if (sources.length > 0) {
+          aiText += `\n\n📚 **Sources:** ${sources
+            .map((url) => `[Link](${url})`)
+            .join(" • ")}`;
         }
+      }
+
+      // Discord has 2000 char limit for messages (4000 for embeds, but we're not using those)
+      const MAX_LENGTH = 1900; // Leave buffer for formatting
+      if (aiText.length > MAX_LENGTH) {
+        aiText =
+          aiText.substring(0, MAX_LENGTH) + "...\n\n*[Response truncated]*";
       }
 
       // 6. CACHE & REPLY
