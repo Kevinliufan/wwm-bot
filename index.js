@@ -51,12 +51,12 @@ client.on("messageCreate", async (message) => {
     );
 
     try {
-      // 3. SEARCH GOOGLE (To get the best link)
+      // 3. SEARCH GOOGLE (To get the best link) - Supports English & Chinese
       const apiKey = process.env.GOOGLE_API_KEY;
       const cx = process.env.SEARCH_ENGINE_ID;
       const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(
         userQuery
-      )}`;
+      )}&lr=lang_en|lang_zh-CN|lang_zh-TW`;
 
       const searchResponse = await axios.get(searchUrl);
       const data = searchResponse.data;
@@ -76,7 +76,11 @@ client.on("messageCreate", async (message) => {
 
       let fullPageText = "";
       try {
-        const pageResponse = await axios.get(jinaUrl);
+        const pageResponse = await axios.get(jinaUrl, {
+          headers: {
+            "Accept-Charset": "utf-8",
+          },
+        });
         fullPageText = pageResponse.data;
       } catch (readError) {
         console.error("Could not read page, falling back to snippet.");
@@ -84,7 +88,7 @@ client.on("messageCreate", async (message) => {
       }
 
       const prompt = `
-        You are an expert guide for "Where Winds Meet".
+        You are an expert guide for "Where Winds Meet" (天涯明月刀).
         
         I have provided the full text of a wiki page below. 
         Your job is to answer the User Question using ONLY that text.
@@ -97,6 +101,7 @@ client.on("messageCreate", async (message) => {
         
         Instructions:
         - Provide a detailed summary (3-4 sentences).
+        - Answer in the same language as the User Question (English or Chinese).
         - Include specific stats, locations, or skills mentioned in the text.
         - Use **Bold** for key terms.
         - Ends with: [Read Source](${bestLink})
