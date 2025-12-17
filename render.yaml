@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: winds-meet-bot
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false # This tells Render to ask you for the token securely in the UI
